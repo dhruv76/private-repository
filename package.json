@@ -1,9 +1,8 @@
 {
-  "name": "crm-whatsapp-backend",
+  "name": "whatsapp-server",
   "version": "1.0.0",
-  "description": "Backend for WhatsApp Integration",
+  "description": "WhatsApp Backend",
   "main": "dist/index.js",
-  "type": "commonjs",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
