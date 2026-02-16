@@ -1,3 +1,4 @@
+const QRCode = require('qrcode');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
 const qrcode = require('qrcode-terminal');
@@ -37,7 +38,23 @@ async function startWhatsApp() {
             console.log('WHATSAPP CONNECTED SUCCESSFULLY!');
         }
     });
+let currentQR = "";
 
+sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
+    if (qr) {
+        currentQR = qr; // QR को सेव कर रहे हैं
+        console.log("New QR Generated!");
+    }
+    if (connection === 'open') console.log('CONNECTED!');
+});
+
+// ब्राउज़र में QR देखने के लिए यह लिंक
+app.get('/scan', async (req, res) => {
+    if (!currentQR) return res.send("QR कोड अभी जनरेट नहीं हुआ है, कृपया 10 सेकंड रुकें और पेज रिफ्रेश करें।");
+    const qrImage = await QRCode.toDataURL(currentQR);
+    res.send(`<img src="${qrImage}" style="width:300px;"> <p>अपने व्हाट्सएप से इसे स्कैन करें</p>`);
+});
     // Message bhejne ke liye API
     app.post('/send', async (req, res) => {
         const { number, message } = req.body;
