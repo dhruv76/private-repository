@@ -1,43 +1,59 @@
+import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
 import express from 'express';
-import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import cors from 'cors';
 
 const app = express();
-const port = process.env.PORT || 8080;
-
 app.use(cors());
 app.use(express.json());
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        executablePath: '/usr/bin/google-chrome-stable',
-        handleSIGINT: false,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu'
-        ],
-    }
-});
+const PORT = process.env.PORT || 8080;
 
-client.on('qr', (qr) => {
-    console.log('QR RECEIVED', qr);
-    qrcode.generate(qr, { small: true });
-});
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        browser: ['CRM-Server', 'Chrome', '1.0.0']
+    });
 
-client.on('ready', () => {
-    console.log('WhatsApp Client is ready!');
-});
+    sock.ev.on('creds.update', saveCreds);
 
-app.get('/', (req, res) => {
-    res.send('WhatsApp Server is running!');
-});
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            console.log("SCAN THIS QR CODE:");
+            qrcode.generate(qr, { small: true });
+        }
 
-client.initialize();
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('Connection closed, reconnecting:', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            console.log('WHATSAPP CONNECTED SUCCESSFULLY!');
+        }
+    });
 
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    // API to send message
+    app.post('/send-message', async (req: any, res: any) => {
+        const { number, message } = req.body;
+        try {
+            const jid = `${number}@s.whatsapp.net`;
+            await sock.sendMessage(jid, { text: message });
+            res.status(200).json({ success: true, message: "Sent!" });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err });
+        }
+    });
+}
+
+app.get('/', (req, res) => res.send('WhatsApp Server is Live!'));
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    connectToWhatsApp();
 });
