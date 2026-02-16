@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "WhatsApp Backend without Puppeteer",
   "main": "index.js",
-  "scripts": {
-    "start": "ts-node index.ts",
-    "dev": "ts-node index.ts"
-  },
+ "scripts": {
+  "start": "ts-node index.ts",
+  "build": "tsc"
+},
   "dependencies": {
     "@whiskeysockets/baileys": "^6.5.0",
     "qrcode-terminal": "^0.12.0",
