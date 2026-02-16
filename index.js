@@ -1,18 +1,17 @@
-const QRCode = require('qrcode');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
-const qrcode = require('qrcode-terminal');
+const qrcodeTerminal = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const cors = require('cors');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+let currentQR = ""; 
+
 async function startWhatsApp() {
-    // Session save karne ke liye
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-    
-    // Socket setup (Error line removed here)
     const sock = makeWASocket({
         auth: state,
         browser: ['CRM-Server', 'Chrome', '1.0.0']
@@ -22,53 +21,36 @@ async function startWhatsApp() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
-        // QR Code print karne ka naya tarika
         if (qr) {
-            console.log('\n--- SCAN THIS QR CODE ---');
-            qrcode.generate(qr, { small: true });
-            console.log('--------------------------\n');
+            currentQR = qr;
+            console.log('--- NEW QR GENERATED! Open /scan link to see it ---');
+            qrcodeTerminal.generate(qr, { small: true });
         }
-
+        if (connection === 'open') {
+            console.log('CONNECTED!');
+            currentQR = ""; 
+        }
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed. Reconnecting:', shouldReconnect);
             if (shouldReconnect) startWhatsApp();
-        } else if (connection === 'open') {
-            console.log('WHATSAPP CONNECTED SUCCESSFULLY!');
         }
     });
-let currentQR = "";
 
-sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    if (qr) {
-        currentQR = qr; // QR को सेव कर रहे हैं
-        console.log("New QR Generated!");
-    }
-    if (connection === 'open') console.log('CONNECTED!');
-});
+    app.get('/scan', async (req, res) => {
+        if (!currentQR) return res.send("<h3>QR तैयार हो रहा है... 10 सेकंड बाद Refresh करें।</h3>");
+        const qrImage = await QRCode.toDataURL(currentQR);
+        res.send(`<div style="text-align:center;margin-top:50px;"><h2>Scan with WhatsApp</h2><img src="${qrImage}" style="width:300px;"><p>Scanning ke baad ye apne aap connect ho jayega.</p></div>`);
+    });
 
-// ब्राउज़र में QR देखने के लिए यह लिंक
-app.get('/scan', async (req, res) => {
-    if (!currentQR) return res.send("QR कोड अभी जनरेट नहीं हुआ है, कृपया 10 सेकंड रुकें और पेज रिफ्रेश करें।");
-    const qrImage = await QRCode.toDataURL(currentQR);
-    res.send(`<img src="${qrImage}" style="width:300px;"> <p>अपने व्हाट्सएप से इसे स्कैन करें</p>`);
-});
-    // Message bhejne ke liye API
     app.post('/send', async (req, res) => {
         const { number, message } = req.body;
-        try {
-            await sock.sendMessage(`${number}@s.whatsapp.net`, { text: message });
-            res.send({ status: 'sent', message: 'Success' });
-        } catch (err) {
-            res.status(500).send({ status: 'error', error: err.message });
-        }
+        await sock.sendMessage(`${number}@s.whatsapp.net`, { text: message });
+        res.send({ status: 'sent' });
     });
 }
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log('Server is running on port ' + PORT);
+    console.log('Server running on port ' + PORT);
     startWhatsApp();
 });
