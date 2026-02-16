@@ -1,18 +1,14 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
-import { Boom } from '@hapi/boom';
-import express from 'express';
-import qrcode from 'qrcode-terminal';
-import cors from 'cors';
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const express = require('express');
+const qrcode = require('qrcode-terminal');
+const cors = require('cors');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 8080;
-
-async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-    
+async function startWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: true,
@@ -23,37 +19,23 @@ async function connectToWhatsApp() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
         if (qr) {
-            console.log("SCAN THIS QR CODE:");
+            console.log('--- QR CODE ---');
             qrcode.generate(qr, { small: true });
         }
-
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed, reconnecting:', shouldReconnect);
-            if (shouldReconnect) connectToWhatsApp();
-        } else if (connection === 'open') {
-            console.log('WHATSAPP CONNECTED SUCCESSFULLY!');
-        }
+        if (connection === 'open') console.log('CONNECTED!');
+        if (connection === 'close') startWhatsApp();
     });
 
-    // API to send message
-    app.post('/send-message', async (req: any, res: any) => {
+    app.post('/send', async (req, res) => {
         const { number, message } = req.body;
-        try {
-            const jid = `${number}@s.whatsapp.net`;
-            await sock.sendMessage(jid, { text: message });
-            res.status(200).json({ success: true, message: "Sent!" });
-        } catch (err) {
-            res.status(500).json({ success: false, error: err });
-        }
+        await sock.sendMessage(`${number}@s.whatsapp.net`, { text: message });
+        res.send({ status: 'sent' });
     });
 }
 
-app.get('/', (req, res) => res.send('WhatsApp Server is Live!'));
-
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    connectToWhatsApp();
+    console.log('Server running on ' + PORT);
+    startWhatsApp();
 });
